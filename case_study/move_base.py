@@ -4,19 +4,15 @@
 # This source code is licensed under the BSD-3-Clause license found in the
 # LICENSE file in the root directory of this source tree.
 
-from models import PBurstModel
-from units import mseconds, useconds, Hz
-from pycpa.options import set_opt
-
 import pycpa
 import pycpa.model as model
-from pycpa.junctions import ORJoin
-from pycpa.analysis import NotSchedulableException
-
-
 import ros
-from ros import Callback, CBType, CBSReservation, DefaultScheduler
-from units import seconds, Hz
+from models import PBurstModel
+from pycpa.analysis import NotSchedulableException
+from pycpa.junctions import ORJoin
+from pycpa.options import set_opt
+from ros import Callback, CBSReservation, CBType, DefaultScheduler
+from units import Hz, mseconds, seconds, useconds
 
 
 def analyze_system(s):
