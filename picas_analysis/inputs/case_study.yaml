@@ -1,0 +1,170 @@
+num_cpus: 4
+num_executors: 18
+callbacks:
+  # chain 0
+  cb0:
+    period: 80
+    exec: 2.3
+    node_id: 0
+    chain_id: 0
+  cb1:
+    period: 0
+    exec: 16.1
+    node_id: 1
+    chain_id: 0
+  # chain 1
+  cb2:
+    period: 80
+    exec: 2.3
+    node_id: 0
+    chain_id: 1
+  cb3:
+    period: 0
+    exec: 2.2
+    node_id: 2
+    chain_id: 1
+  cb4:
+    period: 0
+    exec: 18.4
+    node_id: 3
+    chain_id: 1
+  cb5:
+    period: 0
+    exec: 9.1
+    node_id: 4
+    chain_id: 1
+  # chain 2
+  cb6:
+    period: 100
+    exec: 23.1
+    node_id: 5
+    chain_id: 2
+  cb7:
+    period: 0
+    exec: 7.9
+    node_id: 6
+    chain_id: 2
+  cb8:
+    period: 0
+    exec: 14.2
+    node_id: 7
+    chain_id: 2
+  cb9:
+    period: 0
+    exec: 17.9
+    node_id: 8
+    chain_id: 2
+  # chain 3
+  cb10:
+    period: 100
+    exec: 20.6
+    node_id: 9
+    chain_id: 3
+  cb11:
+    period: 0
+    exec: 17.9
+    node_id: 10
+    chain_id: 3
+  cb12:
+    period: 0
+    exec: 6.6
+    node_id: 11
+    chain_id: 3
+  # chain 4
+  cb13:
+    period: 160
+    exec: 1.7
+    node_id: 12
+    chain_id: 4
+  cb14:
+    period: 0
+    exec: 11
+    node_id: 13
+    chain_id: 4
+  cb15:
+    period: 0
+    exec: 6.6
+    node_id: 14
+    chain_id: 4
+  cb16:
+    period: 0
+    exec: 7.9
+    node_id: 15
+    chain_id: 4
+  # chain 5
+  cb17:
+    period: 1000
+    exec: 1.7
+    node_id: 16
+    chain_id: 5
+  cb18:
+    period: 0
+    exec: 195.9
+    node_id: 17
+    chain_id: 5
+  # chain 6
+  cb19:
+    period: 120
+    exec: 33.2
+    node_id: 18
+    chain_id: 6
+  cb20:
+    period: 0
+    exec: 2.2
+    node_id: 19
+    chain_id: 6
+  # chain 7
+  cb21:
+    period: 120
+    exec: 33.2
+    node_id: 20
+    chain_id: 7
+  cb22:
+    period: 0
+    exec: 6.6
+    node_id: 21
+    chain_id: 7
+  # chain 8
+  cb23:
+    period: 120
+    exec: 33.2
+    node_id: 22
+    chain_id: 8
+  cb24:
+    period: 0
+    exec: 6.6
+    node_id: 23
+    chain_id: 8
+  # chain 9
+  cb25:
+    period: 120
+    exec: 33.2
+    node_id: 24
+    chain_id: 9
+  cb26:
+    period: 0
+    exec: 1.7
+    node_id: 25
+    chain_id: 9
+  # chain 10
+  cb27:
+    period: 120
+    exec: 33.2
+    node_id: 26
+    chain_id: 10
+  cb28:
+    period: 0
+    exec: 2.2
+    node_id: 27
+    chain_id: 10
+  # chain 11
+  cb29:
+    period: 120
+    exec: 33.2
+    node_id: 28
+    chain_id: 11
+  cb30:
+    period: 0
+    exec: 2.2
+    node_id: 29
+    chain_id: 11

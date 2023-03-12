@@ -4,62 +4,34 @@
 # This source code is licensed under the BSD-3-Clause license found in the
 # LICENSE file in the root directory of this source tree.
 
-import matplotlib as mpl
-import matplotlib.pyplot as plt
-import numpy as np
-from fractions import Fraction
-import math
-import logging
-from functools import lru_cache
+from models import PBurstModel
+from units import mseconds, useconds, Hz
+from pycpa.options import set_opt
 
+import pycpa
 import pycpa.model as model
 from pycpa.junctions import ORJoin
-import pycpa.analysis
 from pycpa.analysis import NotSchedulableException
-from pycpa.graph import graph_system
+
 
 import ros
 from ros import Callback, CBType, CBSReservation, DefaultScheduler
+from units import seconds, Hz
+
+
+def analyze_system(s):
+    """Use names as keys instead of the callback objects, since the latter have equality issues"""
+    r = pycpa.analysis.analyze_system(s)
+    return {task.name: result for task, result in r.items()}
 
 # The time unit is 100 microseconds. However, this is an implementation detail.
 # Use these functions when calculating times instead.
-def useconds(n):
-    frac, i = math.modf(n / 100)
-    assert frac == 0
-    return int(i)
-def mseconds(n):
-    return useconds(1000 * n)
-def seconds(n):
-    return mseconds(1000 * n)
-def Hz(n):
-    return int(seconds(1 / n))
 
-
-from pycpa.options import set_opt
 
 set_opt('max_wcrt', seconds(1))
+
 # Minimum worst-case jitter for input sensors.
 # This models interrupt latency+ROS overhead, underestimated
-min_jitter = useconds(200)
-
-
-class PBurstModel (model.PJdEventModel):
-    def __init__(self, P, burstlen, dmin, name='min', **kwargs):
-        J = burstlen * P
-        super().__init__(P, J, dmin, name=name, **kwargs)
-
-
-wcets = {'local_costmap': mseconds(2),
-         'global_costmap': mseconds(10),
-         'local_planner': mseconds(18),
-         'global_planner': mseconds(200),
-         'goal_setter': min_jitter,
-         'pose_estimator': useconds(200),
-         'sensor2mem': min_jitter}
-input_topics = [('/scan', model.PJdEventModel(P=Hz(12.5), J=min_jitter)),
-                ('/tF', model.PJdEventModel(P=Hz(12.5), J=min_jitter)),
-                ('/odom', model.PJdEventModel(P=Hz(12.5), J=min_jitter)),
-                ('/goal', PBurstModel(P=Hz(0.1), burstlen=0, dmin=mseconds(100)))]
 
 
 class MoveBase(model.System):
@@ -163,6 +135,7 @@ class MoveBase(model.System):
 
 class EventDrivenMoveBase(MoveBase):
     """A model of move_base, where the components are triggered by ROS topics."""
+
     def __init__(self, num_reservations, **kwargs):
         super().__init__(num_reservations,
                          name='move_base.driver-event.{}'.format(num_reservations), **kwargs)
@@ -206,17 +179,21 @@ class EventDrivenMoveBase(MoveBase):
         except NotSchedulableException as e:
             print(f"Not schedulable ({e})")
             return None
-        return ros.e2e_latency(ros.find_path(self.callbacks['/odom'], self.callbacks['/cmd_vel']), task_results)
+        return ros.e2e_latency(ros.find_path(
+            self.callbacks['/odom'],
+            self.callbacks['/cmd_vel']),
+            task_results)
 
 
 class TimeDrivenMoveBase(MoveBase):
     """A model of move_base, where all components are triggered periodically."""
+
     def __init__(self, num_reservations, period=Hz(12.5), **kwargs):
         super().__init__(num_reservations,
                          name='move_base.time-driven{}'.format(num_reservations), **kwargs)
 
-        # Prioritize the timers from source to destination. We want the source tasks to run first, so
-        # the data can flow through the entire path in a single period.
+        # Prioritize the timers from source to destination. We want the source tasks to run first,
+        # so the data can flow through the entire path in a single period.
         # We prioritize the local planner higher than the global planner components
         callbacks_ = [
             Callback('sensor2mem', CBType.SUBSCRIBER, 0, wcet=wcets['sensor2mem']),
@@ -251,11 +228,15 @@ class TimeDrivenMoveBase(MoveBase):
         assert all([cb.resource for cb in self.callbacks.values()])
 
     def e2e_local_chain(self):
-        # In the time-driven system, the E2E delay corresponds to the WCET of the local_planner task.
-        # This is, because the predecessors of local_planner are prioritized higher than it and all trigger at
+        # In the time-driven system, the E2E delay corresponds to the WCET of
+        # the local_planner task.
+        # This is, because the predecessors of local_planner are prioritized
+        #  higher than it and all trigger at
         # the same time.
-        # However, the WCRT of the local_planner task is the E2E delay *counting from the task release*.
-        # We therefore add the maximum delay between event arrival and task release (one period) to get
+        # However, the WCRT of the local_planner task is the E2E delay
+        #  *counting from the task release*.
+        # We therefore add the maximum delay between event arrival and task release
+        # (one period) to get
         # the maximum E2E latency from event arrival.
         try:
             task_results = analyze_system(self)
@@ -272,211 +253,17 @@ models = {'time-driven': TimeDrivenMoveBase,
           'event-driven': EventDrivenMoveBase}
 
 
-def analyze_system(s):
-    """Use names as keys instead of the callback objects, since the latter have equality issues"""
-    r = pycpa.analysis.analyze_system(s)
-    return {task.name: result for task, result in r.items()}
+min_jitter = useconds(200)
 
+wcets = {'local_costmap': mseconds(2),
+         'global_costmap': mseconds(10),
+         'local_planner': mseconds(18),
+         'global_planner': mseconds(200),
+         'goal_setter': min_jitter,
+         'pose_estimator': useconds(200),
+         'sensor2mem': min_jitter}
 
-# Plotting/Analysis stuff
-
-def isInteger(x):
-    """Returns whether x is an integral number.
-
-    This is independent of the type of x. 2.0 is considered an integral number"""
-    return int(x) == x
-
-def minimalP(alpha, min_budget=mseconds(1)):
-    """Returns the smallest reservation period that allows a budget of alpha with min_budget granularity.
-
-    Effectively, this computes the smallest P such that alpha*P is divisible by min_budget."""
-
-    if alpha == 0:
-        return min_budget
-
-    alpha = Fraction(alpha).limit_denominator(100)
-
-    # Multiply both sides by ceil(budget/numerator) to get a numerator
-    # that is larger then min_budget.
-
-    factor = min_budget / alpha.numerator
-    if not isInteger(factor):
-        factor = math.ceil(factor)
-        assert isInteger(factor)
-    return alpha.denominator * int(factor)
-
-
-def make2res_alpha(alpha, model, P):
-    """Creates a CPA model with two reservations, with relative budget alpha.
-
-    model is a function that, given a reservation count, returns a model with that many reservations.
-    The function then configures the budget such that reservation 0 receives alpha of the total budget,
-    and reservation 1 receives 75% of budget.
-    P can be the reservation period length or None, which selects the minimum feasible period length."""
-    s = model(2)
-
-    if P is None:
-        P = minimalP(alpha)
-        logging.info('Computed P for alpha={} as {}'.format(alpha, P))
-
-    alpha = Fraction(alpha).limit_denominator(P)
-    assert isInteger(alpha * P)
-    s.reservations[0].period = P
-    s.reservations[0].budget = int(alpha * P)
-    s.reservations[1].period = 4
-    s.reservations[1].budget = 3
-
-    # Sanity check
-    for r in s.reservations:
-        assert isInteger(r.period) and isInteger(r.budget)
-        assert 0 <= r.budget <= r.period
-
-    return s
-
-
-@lru_cache(maxsize=None)
-def e2e_per_alpha_local(alpha, model, P=None, disable_chain=False):
-    """Sets up a 2-reservation model with the given budget distribution, and computes the e2e latency of the /odom -> /cmd_vel chain"""
-    # The chain analysis decision is passed in from the outside as a parameter,
-    # and the global variable modified here. This allows memoization of the function,
-    # which cannot account for global variables otherwise
-    with ros.chainAnalysis(disable_chain):
-        return make2res_alpha(alpha, model, P).e2e_local_chain()
-
-
-def convertTimes(times, unit_tick):
-    """Takes a list of timestamps, and normalizes them to the given unit.
-
-    For convenience, None is normalized to None. This is important to allow undefined points in the list."""
-    return [None if x is None else x / unit_tick
-            for x in times]
-
-
-# The pyplot plotting style for the different models.
-model_graphspec = {'time-driven': 'bo-',
-                   'event-driven': 'gD-'}
-
-def plot_e2e_per_alpha(P=None, **kwargs):
-    """Plots the reservation budget assignment vs. the /odom->/cmd_vel end-to-end latencies.
-
-    P is the reservation period, any other kwargs are passed to plt.plot"""
-
-    # Step through the x axis in steps of 5.
-    xs_pct = np.linspace(0, 100, num=21)
-    plt.xlabel('Budget of the local reservation (percent)')
-    plt.ylabel('End-to-end latency (ms)')
-
-    for mname, m in models.items():
-        if P is not None:
-            mname += '(P={})'.format(P / mseconds(1))
-
-        latencies = [e2e_per_alpha_local(x / 100, P=P, model=m, disable_chain=False)
-                     for x in xs_pct]
-        latencies_nochain = [e2e_per_alpha_local(x / 100, P=P, model=m, disable_chain=True)
-                             for x in xs_pct]
-        plt.plot(xs_pct, convertTimes(latencies, mseconds(1)),
-                 model_graphspec[mname], label=mname, **kwargs)
-        if mname == 'event-driven':
-            plt.plot(xs_pct, convertTimes(latencies_nochain, mseconds(1)),
-                     model_graphspec[mname], linestyle=':', label=mname + ' (no chains)', **kwargs)
-    plt.ylim(bottom=0)
-    plt.legend(loc='upper left')
-
-# We need to memoize this function in addition to e2e_per_alpha_local, since the memoization
-# doesn't seem to be able to handle ad-hoc computed models.
-@lru_cache(maxsize=None)
-def jittered_lats(movebase, js, disable_chain=False):
-    """Computes e2e_per_alpha_local at reservation alpha of 45% for each jitter in js."""
-
-    def jittered_models(J):
-        return {'/odom': model.PJdEventModel(P=Hz(12.5), J=J)}
-
-    return [e2e_per_alpha_local(0.45,
-                                lambda n: movebase(n, override_model=jittered_models(J)),
-                                disable_chain=disable_chain)
-            for J in js]
-
-
-def plot_e2e_per_jitter(add_disabled_chain=False):
-    """Plots jitter values vs. jittered_lats."""
-    js = range(0, mseconds(200), mseconds(15))
-
-    plt.xlabel('Jitter on the input sensors (ms)')
-    plt.ylabel('End-to-End latency (ms)')
-    for mname, m in models.items():
-        plt.plot(convertTimes(js, mseconds(1)),
-                 convertTimes(jittered_lats(m, js), mseconds(1)),
-                 model_graphspec[mname], label=mname)
-
-    if add_disabled_chain:
-        plt.plot(convertTimes(js, mseconds(1)),
-                 convertTimes(jittered_lats(EventDrivenMoveBase, js, disable_chain=True), mseconds(1)),
-                 model_graphspec[mname], linestyle=':', label='event-driven (no chains)')
-
-    plt.ylim(bottom=0)
-    plt.legend()
-
-def configure_mpl_for_tex():
-    "Configures matplotlib for LaTeX embedding"
-    # Inspired by https://jwalton.info/Embed-Publication-Matplotlib-Latex/
-
-    # Width of the LIPICS a4paper column, determined by \the\columnwidth
-    width_pts = 398.33858
-    golden_ratio = (5**.5 - 1) / 2
-    # Width of the figure relative to the page
-    rel_width = .48
-
-    inches_per_pt = 1 / 72.27
-
-    # Figure width in inches
-    width_in = width_pts * inches_per_pt * rel_width
-    # Figure height in inches
-    height_in = width_in * golden_ratio
-
-    settings = {
-        "figure.figsize": (width_in, height_in),
-        "text.usetex": True,
-        "font.family": "serif",
-        "font.size": 6,
-        "font.serif": ["computer modern roman"],
-        "axes.labelsize": 6,
-        "legend.fontsize": 6,
-        "xtick.labelsize": 6,
-        "ytick.labelsize": 6,
-        "lines.markersize": 3.5
-    }
-    mpl.rcParams.update(settings)
-
-def generate_charts_for_paper(dir='.'):
-    """Generate the charts for the ECRTS paper."""
-    plt.close()
-    configure_mpl_for_tex()
-    plot_e2e_per_alpha()
-    lat_per_budget_path = dir + '/latency_per_budget.pdf'
-    plt.savefig(lat_per_budget_path, bbox_inches='tight')
-
-    plt.cla()
-    plot_e2e_per_jitter()
-    lat_per_jitter_path = dir + '/latency_per_jitter.pdf'
-    plt.savefig(lat_per_jitter_path, bbox_inches='tight')
-
-    print('Generated charts from the ECRTS paper in', lat_per_budget_path, 'and', lat_per_jitter_path)
-
-def generate_chart_for_talk(dir='.'):
-    """Generate the chart for the ECRTS presentation"""
-    plt.close()
-    mpl.rc('figure', figsize=(10.9,4.32))
-    plot_e2e_per_jitter(add_disabled_chain=False)
-    chart_path = dir + '/e2e_per_jitter.png' 
-    plt.savefig(chart_path, dpi=600, bbox_inches='tight', transparent=True)
-
-    print('Generated charts from the ECRTS presentation in', lat_per_budget_path, 'and', lat_per_jitter_path)
-if __name__ == "__main__":
-    for num_res in [1, 2]:
-        for mname, m in models.items():
-            s = m(num_res)
-            graph_system(s, filename='{}-{}.pdf'.format(mname, num_res),
-                         dotout='{}-{}.dot'.format(mname, num_res), show=False)
-
-    generate_charts_for_paper()
-
+input_topics = [('/scan', model.PJdEventModel(P=Hz(12.5), J=min_jitter)),
+                ('/tF', model.PJdEventModel(P=Hz(12.5), J=min_jitter)),
+                ('/odom', model.PJdEventModel(P=Hz(12.5), J=min_jitter)),
+                ('/goal', PBurstModel(P=Hz(0.1), burstlen=0, dmin=mseconds(100)))]
