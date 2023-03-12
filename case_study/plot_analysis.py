@@ -1,6 +1,5 @@
 from functools import lru_cache
 
-import pycpa
 import pycpa.model as model
 import ros
 import matplotlib as mpl
